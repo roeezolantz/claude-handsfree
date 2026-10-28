@@ -1,0 +1,66 @@
+#!/bin/bash
+# Speaks text aloud (Say It, falling back to macOS `say`), optionally followed by a hands-free listening turn.
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="${HANDSFREE_BIN:-$SCRIPT_DIR}"
+STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/claude-handsfree"
+PID_FILE="$STATE_DIR/listener.pid"
+SAYIT="${HANDSFREE_SAYIT_BIN:-/Applications/Say It.app/Contents/Helpers/sayit}"
+SAYIT_MODEL="${HANDSFREE_SAYIT_MODEL:-phonon-31m-en}"
+SAYIT_VOICE="${HANDSFREE_SAYIT_VOICE:-Russell}"
+SAYIT_RATE="${HANDSFREE_SAYIT_RATE:-0.9}"
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat <<'EOF'
+drive-say [--listen] "text"
+
+Speaks text aloud via Say It (falling back to macOS `say`). With --listen,
+stops any running listener first, speaks, then starts a wispr-turn hands-free
+listening turn in the background (same command, so there's no gap between
+speaking and listening).
+
+When driving mode is off (see drive-mode), drive-say only prints the text:
+no speech, no listener, regardless of --listen.
+
+Env vars:
+  HANDSFREE_BIN         Directory holding drive-stop/wispr-turn/wispr-handsfree
+  HANDSFREE_SAYIT_BIN   Path to the Say It CLI (default: the app's bundled helper)
+  HANDSFREE_SAYIT_MODEL, HANDSFREE_SAYIT_VOICE, HANDSFREE_SAYIT_RATE
+                        Say It model/voice/rate
+EOF
+  exit 0
+fi
+
+listen=0
+if [ "${1:-}" = "--listen" ]; then
+  listen=1
+  shift
+fi
+text="${1:-}"
+if [ -z "$text" ]; then
+  echo "drive-say: missing text argument" >&2
+  exit 1
+fi
+
+echo "$text"
+
+mode="off"
+[ -f "$STATE_DIR/state" ] && mode="$(cat "$STATE_DIR/state")"
+if [ "$mode" != "on" ]; then
+  exit 0
+fi
+
+"$BIN/drive-stop" >/dev/null 2>&1
+
+if [ -x "$SAYIT" ]; then
+  "$SAYIT" speak --model "$SAYIT_MODEL" --voice "$SAYIT_VOICE" --rate "$SAYIT_RATE" "$text"
+else
+  say "$text"
+fi
+
+if [ "$listen" -eq 1 ]; then
+  mkdir -p "$STATE_DIR"
+  nohup "$BIN/wispr-turn" >/dev/null 2>&1 &
+  echo $! > "$PID_FILE"
+  disown
+fi

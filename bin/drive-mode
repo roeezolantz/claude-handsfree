@@ -1,0 +1,55 @@
+#!/bin/bash
+# On/off switch for hands-free driving mode. State persists across sessions in a plain text file.
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="${HANDSFREE_BIN:-$SCRIPT_DIR}"
+STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/claude-handsfree"
+STATE_FILE="$STATE_DIR/state"
+
+usage() {
+  cat <<'EOF'
+drive-mode on|off|status|toggle
+
+Switches hands-free driving mode on or off. While off, drive-say only prints
+text: no speech, no listener. State persists in:
+  ${XDG_CONFIG_HOME:-$HOME/.config}/claude-handsfree/state
+
+  on       Turn driving mode on.
+  off      Turn driving mode off; also stops any running listener and
+           resets Wispr's Fn toggle (runs drive-stop).
+  status   Print "on" or "off" (default: off, until turned on once).
+  toggle   Flip the current state.
+EOF
+}
+
+current() {
+  if [ -f "$STATE_FILE" ]; then cat "$STATE_FILE"; else echo "off"; fi
+}
+
+turn_on() {
+  mkdir -p "$STATE_DIR"
+  echo "on" > "$STATE_FILE"
+  echo "on"
+}
+
+turn_off() {
+  mkdir -p "$STATE_DIR"
+  echo "off" > "$STATE_FILE"
+  "$BIN/drive-stop"
+  echo "off"
+}
+
+case "${1:-}" in
+  on) turn_on ;;
+  off) turn_off ;;
+  status) current ;;
+  toggle)
+    if [ "$(current)" = "on" ]; then turn_off; else turn_on; fi
+    ;;
+  --help|-h|"") usage ;;
+  *)
+    echo "drive-mode: unknown argument '$1'" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

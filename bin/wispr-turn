@@ -1,0 +1,36 @@
+#!/bin/bash
+# One hands-free reply: reset Wispr's toggle, start it, wait for quiet, stop it, press Enter.
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="${HANDSFREE_BIN:-$SCRIPT_DIR}"
+VENV="${HANDSFREE_VENV:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-handsfree/venv}"
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat <<'EOF'
+wispr-turn
+
+Runs one hands-free listening turn: resets Wispr's Fn toggle, starts dictation,
+waits (via VAD) until the speaker talks and then goes quiet, stops dictation,
+and presses Enter so the transcribed text is submitted.
+
+Env vars:
+  HANDSFREE_BIN     Directory holding wispr-handsfree and wispr-wait-quiet.py
+                     (default: this script's directory)
+  HANDSFREE_VENV    Python venv with webrtcvad-wheels installed
+                     (default: ${XDG_DATA_HOME:-$HOME/.local/share}/claude-handsfree/venv)
+  WISPR_PASTE_WAIT   Seconds to wait after stopping dictation, before Enter (default: 3)
+  WISPR_SILENCE_SECONDS, WISPR_NO_SPEECH_SECONDS, WISPR_MAX_SECONDS, WISPR_VAD_MODE
+                     see wispr-wait-quiet.py --help
+EOF
+  exit 0
+fi
+
+"$BIN/wispr-handsfree" tap >/dev/null; sleep 0.25
+"$BIN/wispr-handsfree" >/dev/null
+if "$VENV/bin/python" "$BIN/wispr-wait-quiet.py"; then
+  "$BIN/wispr-handsfree" >/dev/null
+  sleep "${WISPR_PASTE_WAIT:-3}"
+  "$BIN/wispr-handsfree" enter
+else
+  "$BIN/wispr-handsfree" >/dev/null   # nobody spoke: just stop listening
+fi
